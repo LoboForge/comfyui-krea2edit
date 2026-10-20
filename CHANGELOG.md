@@ -4,6 +4,15 @@ Weights: https://huggingface.co/conradlocke/krea2-identity-edit
 v1.2 updates the **nodes** (see below); they stay backward-compatible with v1/v1.1
 weights via `fit_mode: crop`.
 
+## Unreleased
+
+### Fixed
+- **Blackwell / xformers + `ref_boost`:** when the Fidelity dial builds an
+  `attn_bias`, edit-forward attention now uses ComfyUI's pytorch SDPA path only for
+  those ops (`optimized_attention_override`). Avoids xformers
+  `memory_efficient_attention` failures on NVIDIA Blackwell (`sm_120` / RTX 50-series)
+  without requiring a global `--disable-xformers` launch flag.
+
 ## v2.0.0 — Krea 2 Identity Edit V2 + Krea 2 General Edit V2
 
 V2 ships as two LoRAs (weights on Hugging Face):

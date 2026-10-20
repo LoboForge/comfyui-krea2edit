@@ -24,7 +24,35 @@ import comfy.utils
 import comfy.ldm.common_dit
 from comfy.ldm.flux.layers import timestep_embedding
 from comfy.ldm.flux.math import apply_rope
-from comfy.ldm.modules.attention import optimized_attention_masked
+from comfy.ldm.modules.attention import attention_pytorch
+
+
+# One-shot console note when ref_boost routes attention through SDPA.
+_sdpa_bias_announced = False
+
+
+def _attn_override_pytorch(_orig_attn, *args, **kwargs):
+    """Force Comfy's pytorch SDPA attention for this call.
+
+    xformers.ops.memory_efficient_attention fails with additive attn_bias on some
+    GPUs (notably NVIDIA Blackwell sm_120 / RTX 50-series). PyTorch SDPA accepts the
+    same bias tensors. Scoped via transformer_options["optimized_attention_override"]
+    so the rest of Comfy can keep using xformers when enabled.
+    """
+    return attention_pytorch(*args, **kwargs)
+
+
+def _with_pytorch_attn_for_bias(transformer_options):
+    """Return a shallow copy of transformer_options that forces pytorch attention."""
+    global _sdpa_bias_announced
+    opts = dict(transformer_options) if transformer_options else {}
+    opts["optimized_attention_override"] = _attn_override_pytorch
+    if not _sdpa_bias_announced:
+        _sdpa_bias_announced = True
+        print("[krea2edit] ref_boost attn_bias active: using pytorch SDPA for edit "
+              "attention (xformers+bias is broken on some GPUs, e.g. Blackwell sm_120)",
+              flush=True)
+    return opts
 
 
 def _imgids(bs, frame, h_, w_, device):
@@ -278,6 +306,9 @@ def krea2_edit_forward(m, x, timesteps, context, src_latent, transformer_options
         attn_bias = _ref_attn_bias(boosts, ref_boost_mask, txtlen,
                                    [si.shape[1] for si in src_imgs], tgtlen,
                                    src_grids, combined.device, combined.dtype)
+        # Bias path must not use xformers MEA on Blackwell (sm_120) and similar —
+        # force pytorch SDPA for these blocks only; leave global xformers alone.
+        transformer_options = _with_pytorch_attn_for_bias(transformer_options)
 
     for block in m.blocks:
         combined = block(combined, tvec, freqs, attn_bias, transformer_options=transformer_options)

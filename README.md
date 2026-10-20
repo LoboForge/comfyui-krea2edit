@@ -90,6 +90,18 @@ EmptySD3LatentImage ─┬─ KSampler.latent_image
 Example workflow in `workflows/`: `krea2_identity_edit.json` — single-image editor by
 default; enable group 2 (toggle its Bypass off) for two-image person-into-scene edits.
 
+## Blackwell / xformers note
+
+`ref_boost` / `ref_boost_a` (the Fidelity dial) builds an additive attention bias.
+On some GPUs — notably NVIDIA Blackwell (`sm_120`, e.g. RTX 50-series) —
+`xformers.ops.memory_efficient_attention` fails when that bias is passed. This pack
+detects an active bias and routes **only those edit-forward attention ops** through
+ComfyUI's pytorch SDPA path via `transformer_options["optimized_attention_override"]`.
+You can leave xformers enabled globally for the rest of ComfyUI; no need for
+`--disable-xformers --use-pytorch-cross-attention` just for Identity/General Edit.
+When `ref_boost` and `ref_boost_a` are both `1.0` (bias off), the usual attention
+backend is unchanged.
+
 ## Usage notes (read these — they matter)
 
 1. **Aspect ratio.** With `fit_mode: fit` (default in v1.2) and `vae` + `source_image`
